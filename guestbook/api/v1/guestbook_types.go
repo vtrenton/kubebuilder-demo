@@ -28,18 +28,35 @@ type GuestbookSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Guestbook. Edit guestbook_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Quantity of instances
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	Size int32 `json:"size"`
+
+	// Name of ConfigMap for GuestBookSpec's Configuration
+	// +kubebuilder:validation:MinLength = 1
+	// +kubebuilder:validation:MaxLength = 15
+	ConfigMapName string `json:"configMapName"`
+
+	// +kubebuilder:validation:Enum=Phone;Address;Name
+	Type string `json:"alias,ommitempty"`
 }
 
 // GuestbookStatus defines the observed state of Guestbook
 type GuestbookStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// Pod name of active GuestBook node.
+	Active string `json:"active"`
+
+	// Pod name of active GuestBook node.
+	Standby []string `json:"standby"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster
 
 // Guestbook is the Schema for the guestbooks API
 type Guestbook struct {

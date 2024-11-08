@@ -49,7 +49,18 @@ type MemcachedReconciler struct {
 func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 
-	// TODO(user): your logic here
+	// Check if the deployment already exists, if not create a new one
+	found := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: memcached.Name, Namespace: memcached.Namespace}, found)
+	if err != nil && apierrors.IsNotFound(err) {
+		// Define a new deployment
+		dep := r.deploymentForMemcached()
+		// Create the Deployment on the cluster
+		if err = r.Create(ctx, dep); err != nil {
+			log.Error(err, "Failed to create new Deployment", "Deployment.Namespace", dep.Namespace, "Deployment.Name", dep.Name)
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }
@@ -59,4 +70,27 @@ func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&cachev1alpha1.Memcached{}).
 		Complete(r)
+}
+
+func (r *MemcachedReconciler) deploymentForMemecached() (*appsv1.Deployment, error) {
+	dep = &appsv1.Deployment{
+		Spec: appsv1.DeploymentSpec {
+			// TODO: replicas probably need to passed in
+			Replicas: &replicas
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Image: "memcached:alpine",
+						Name: "memcached",
+						ImagePullPolicy: corev1.PullIfNotPresent,
+						Ports: []corev1.ContainerPort{{
+							ContainerPort: 11211,
+							Name:          "memcached",
+						}},
+						Command: []string{"memcached", "--memory-limit=64", "-o", "modern", "-v"}
+					}},
+				},
+			},
+		},
+	}
 }

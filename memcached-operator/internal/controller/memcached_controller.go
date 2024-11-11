@@ -112,7 +112,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			log.Error(err, "failed to define a new Deployment resource for Memcached")
 
 			// The following implementation will update the status
-			meta.Set StatusConditions(&memcached.Status.Conditions, metav1.Condition{
+			meta.SetStatusConditions(&memcached.Status.Conditions, metav1.Condition{
 				Type: typeAvailableMemcached,
 				Status: metav1.ConditionFalse,
 				Reason: "Reconciling",
@@ -165,40 +165,84 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				Type: typeAvailableMemcached,
 				Status: metav1.ConditionFalse,
 				Reason: "Resizing",
-				Message: fmt.Sprintf("Failed to update the size for the custom resource (%s): (%s)", memcached.Name, err)
+				Message: fmt.Sprintf("Failed to update the size for the custom resource (%s): (%s)", memcached.Name, err),
 			})
 
-			if err := r.Status().Update(ctx, memcached); err !- nil {
+			if err := r.Status().Update(ctx, memcached); err != nil {
 				log.Error(err, "Failed to update memcached status")
 				return ctrl.Result{}, err
 			}
 
 			return ctrl.Result{}, err
 		}
-	// Now, that we update the size we want to requeue the reconciliation
-	// so that we can ensure that we have the latest state of the resource before
-	// update. Also, it will help ensure the desired state on the cluster
-	return ctrl.Result{Requeue: true}, nil
+		// Now, that we update the size we want to requeue the reconciliation
+		// so that we can ensure that we have the latest state of the resource before
+		// update. Also, it will help ensure the desired state on the cluster
+		return ctrl.Result{Requeue: true}, nil
+	}
+	meta.SetStatusCondition(&memcached.Status.Conditions, metav1.Condition{
+		Type: typeAvailableMemcached,
+		Status: metav1.ConditionTrue,
+		Reason: "Reconciling",
+		Message: fmt.Sprintf("Deployment for custom resource (%s) with %d rreplicas created successfully", memcached.Name, size),
+	})
+
+	if err := r.Status().Update(ctx, memcached); err != nil {
+		log.Error(err, "Failed to update memcached status")
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&cachev1alpha1.Memcached{}).
+		Owns(&appsv1.Deployment{}).
+		Named("memcached").
 		Complete(r)
 }
 
-func (r *MemcachedReconciler) deploymentForMemecached() (*appsv1.Deployment, error) {
+func (r *MemcachedReconciler) deploymentForMemcached(memcached *cachev1alpha1.Memcached) (*appsv1.Deployment, error) {
+	replicas := memcached.Spec.Size
+	image := "memcached:alpine"
+
 	dep = &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: memcached.Name,
+			Namespace: memcached.Namespace,
+		},
 		Spec: appsv1.DeploymentSpec {
-			// TODO: replicas probably need to passed in
 			Replicas: &replicas
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app.kubernetes.io/name": "project"}
+			},
 			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app.kubernetes.io/name": "project"}
+				},
 				Spec: corev1.PodSpec{
+					SecurityContext: corev1.PodSecurityContext{
+						RunAsNonRoot: &[]bool{true}[0],
+						SeccompProfile: &corev1.SeccompProfile{
+							Type: corev1.SeccompProfileTypeRuntimeDefault,
+						},
+					},
 					Containers: []corev1.Container{{
-						Image: "memcached:alpine",
+						Image: image,
 						Name: "memcached",
 						ImagePullPolicy: corev1.PullIfNotPresent,
+						SecurityContext: &corev1.SecurityContext{
+							RunAsNonRoot:             &[]bool{true}[0],
+							RunAsUser:                &[]int64{1001}[0],
+							AllowPrivilegeEscalation: &[]bool{false}[0],
+							Capabilities: &corev1.Capability{
+								Drop: []corev1.Capability{
+									"ALL",
+								},
+							},
+						},
 						Ports: []corev1.ContainerPort{{
 							ContainerPort: 11211,
 							Name:          "memcached",
@@ -209,4 +253,10 @@ func (r *MemcachedReconciler) deploymentForMemecached() (*appsv1.Deployment, err
 			},
 		},
 	}
+
+	// Set ownerRef for Deployment
+	if err := ctrl.SetController.Reference(memcached, dep, r.Scheme); err != nil {
+		return nil, err
+	}
+	return dep, nil
 }

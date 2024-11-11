@@ -17,30 +17,31 @@ limitations under the License.
 package controller
 
 import (
-    "context"
-    "fmt"
-    appsv1 "k8s.io/api/apps/v1"
-    corev1 "k8s.io/api/core/v1"
-    apierrors "k8s.io/apimachinery/pkg/api/errors"
-    "k8s.io/apimachinery/pkg/api/meta"
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    "k8s.io/apimachinery/pkg/types"
-    "time"
+	"context"
+	"fmt"
+	"time"
 
-    "k8s.io/apimachinery/pkg/runtime"
-    ctrl "sigs.k8s.io/controller-runtime"
-    "sigs.k8s.io/controller-runtime/pkg/client"
-    "sigs.k8s.io/controller-runtime/pkg/log"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-    cachev1alpha1 "example.com/memcached/api/v1alpha1"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	cachev1alpha1 "example.com/memcached-operator/api/v1alpha1"
 )
 
 // Definitions to manage status conditions
 const (
 	// typeAvailableMemcached represent the status of the Deployment reconciliation.
-	typeAvailibleMemcached = "Available"
+	typeAvailableMemcached = "Available"
 	// typeDegradedMemcached represents the status used when the custom resource is deleted and the finalizer operations are yet to occur.
-	typeDegradedMemcached = "Degraded"
+	//typeDegradedMemcached = "Degraded" // unused for now so commented
 )
 
 // MemcachedReconciler reconciles a Memcached object
@@ -71,9 +72,9 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// The purpose is to check if the Custom Resource for the Kind Memcached
 	// is applied on the cluster if not we return nil to stop the reconciliation
 	memcached := &cachev1alpha1.Memcached{}
-	err := r.Gert(ctx, req.NamespacedName, memcached)
+	err := r.Get(ctx, req.NamespacedName, memcached)
 	if err != nil {
-		if apierror.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// If the custom resource is not found then it usually means that it was deleted or not created
 			// In this way, we will stop the reconciliation
 			log.Info("memcached resource not found. Ignoring since object must be deleted")
@@ -85,7 +86,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Let's just set the status as Unknown when no status is available
-	if memcached.Status.Conditions == nil || les(memcached.Status.Conditions) == 0{
+	if len(memcached.Status.Conditions) == 0 {
 		meta.SetStatusCondition(&memcached.Status.Conditions, metav1.Condition{Type: typeAvailableMemcached, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
 		if err = r.Status().Update(ctx, memcached); err != nil {
 			log.Error(err, "Failed to updated Memcached status")
@@ -96,7 +97,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// so that we have the latest state of the resource on the cluster and we will avoid
 		// raising the error "the object has been modified, please apply
 		// your changes to the latest version and try again" which would re-trigger the reconciliation
-		if err := r.Get(ctx, req.NamespaceName, memcached); err != nil {
+		if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
 			log.Error(err, "Failed to re-fetch memcached")
 			return ctrl.Result{}, err
 		}
@@ -104,7 +105,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// Check if the deployment already exists, if not create a new one
 	found := &appsv1.Deployment{}
-	err := r.Get(ctx, types.NamespacedName{Name: memcached.Name, Namespace: memcached.Namespace}, found)
+	err = r.Get(ctx, types.NamespacedName{Name: memcached.Name, Namespace: memcached.Namespace}, found)
 	if err != nil && apierrors.IsNotFound(err) {
 		// Define a new deployment
 		dep, err := r.deploymentForMemcached(memcached)
@@ -112,10 +113,10 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			log.Error(err, "failed to define a new Deployment resource for Memcached")
 
 			// The following implementation will update the status
-			meta.SetStatusConditions(&memcached.Status.Conditions, metav1.Condition{
-				Type: typeAvailableMemcached,
-				Status: metav1.ConditionFalse,
-				Reason: "Reconciling",
+			meta.SetStatusCondition(&memcached.Status.Conditions, metav1.Condition{
+				Type:    typeAvailableMemcached,
+				Status:  metav1.ConditionFalse,
+				Reason:  "Reconciling",
 				Message: fmt.Sprintf("Failed to create Deployment for the custom resource (%s): (%s)", memcached.Name, err)})
 
 			if err := r.Status().Update(ctx, memcached); err != nil {
@@ -134,17 +135,17 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// Deployment created sucessfully
 		// We will requeue the reconciliation so that we cna ensure the state
 		// and move forwared for the next operations
-		return ctrl.Resutl{Requeue.After: time.Minute}, nil
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	} else if err != nil {
 		log.Error(err, "Failed to get Deployment")
 		// Let's return the error for the reconciliation to be re-triggered again
 		return ctrl.Result{}, err
 	}
 
-    // The CRD API defines that the Memcached type have a MemcachedSpec.Size field
-    // to set the quantity of Deployment instances to the desired state on the cluster.
-    // Therefore, the following code will ensure the Deployment size is the same as defined
-    // via the Size spec of the Custom Resource which we are reconciling.	
+	// The CRD API defines that the Memcached type have a MemcachedSpec.Size field
+	// to set the quantity of Deployment instances to the desired state on the cluster.
+	// Therefore, the following code will ensure the Deployment size is the same as defined
+	// via the Size spec of the Custom Resource which we are reconciling.
 	size := memcached.Spec.Size
 	if *found.Spec.Replicas != size {
 		found.Spec.Replicas = &size
@@ -155,16 +156,16 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			// so that we have the latest state of the resource on the cluster and we will avoid
 			// raising the error "the object has been modified, please apply
 			// your changes to the latest version and try again" which would re-trigger the reconciliation
-			if err := r.Get(ctx, req,NamespacedName, memcached); err != nil {
+			if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
 				log.Error(err, "Failed to re-fetch memcached")
 				return ctrl.Result{}, err
 			}
 
 			// The following implementation will update the status
-			meta.SetStatusCondition(&memcached.Status.Condition, metav1.Condition{
-				Type: typeAvailableMemcached,
-				Status: metav1.ConditionFalse,
-				Reason: "Resizing",
+			meta.SetStatusCondition(&memcached.Status.Conditions, metav1.Condition{
+				Type:    typeAvailableMemcached,
+				Status:  metav1.ConditionFalse,
+				Reason:  "Resizing",
 				Message: fmt.Sprintf("Failed to update the size for the custom resource (%s): (%s)", memcached.Name, err),
 			})
 
@@ -181,9 +182,9 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{Requeue: true}, nil
 	}
 	meta.SetStatusCondition(&memcached.Status.Conditions, metav1.Condition{
-		Type: typeAvailableMemcached,
-		Status: metav1.ConditionTrue,
-		Reason: "Reconciling",
+		Type:    typeAvailableMemcached,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Reconciling",
 		Message: fmt.Sprintf("Deployment for custom resource (%s) with %d rreplicas created successfully", memcached.Name, size),
 	})
 
@@ -208,36 +209,36 @@ func (r *MemcachedReconciler) deploymentForMemcached(memcached *cachev1alpha1.Me
 	replicas := memcached.Spec.Size
 	image := "memcached:alpine"
 
-	dep = &appsv1.Deployment{
+	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: memcached.Name,
+			Name:      memcached.Name,
 			Namespace: memcached.Namespace,
 		},
-		Spec: appsv1.DeploymentSpec {
-			Replicas: &replicas
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"app.kubernetes.io/name": "project"}
+				MatchLabels: map[string]string{"app.kubernetes.io/name": "project"},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app.kubernetes.io/name": "project"}
+					Labels: map[string]string{"app.kubernetes.io/name": "project"},
 				},
 				Spec: corev1.PodSpec{
-					SecurityContext: corev1.PodSecurityContext{
+					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: &[]bool{true}[0],
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
 					Containers: []corev1.Container{{
-						Image: image,
-						Name: "memcached",
+						Image:           image,
+						Name:            "memcached",
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						SecurityContext: &corev1.SecurityContext{
 							RunAsNonRoot:             &[]bool{true}[0],
 							RunAsUser:                &[]int64{1001}[0],
 							AllowPrivilegeEscalation: &[]bool{false}[0],
-							Capabilities: &corev1.Capability{
+							Capabilities: &corev1.Capabilities{
 								Drop: []corev1.Capability{
 									"ALL",
 								},
@@ -247,7 +248,7 @@ func (r *MemcachedReconciler) deploymentForMemcached(memcached *cachev1alpha1.Me
 							ContainerPort: 11211,
 							Name:          "memcached",
 						}},
-						Command: []string{"memcached", "--memory-limit=64", "-o", "modern", "-v"}
+						Command: []string{"memcached", "--memory-limit=64", "-o", "modern", "-v"},
 					}},
 				},
 			},
@@ -255,7 +256,7 @@ func (r *MemcachedReconciler) deploymentForMemcached(memcached *cachev1alpha1.Me
 	}
 
 	// Set ownerRef for Deployment
-	if err := ctrl.SetController.Reference(memcached, dep, r.Scheme); err != nil {
+	if err := ctrl.SetControllerReference(memcached, dep, r.Scheme); err != nil {
 		return nil, err
 	}
 	return dep, nil

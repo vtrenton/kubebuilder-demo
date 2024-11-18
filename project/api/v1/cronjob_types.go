@@ -17,9 +17,12 @@ limitations under the License.
 package v1
 
 import (
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-i// ConcurrencyPolicy describes how the job will be handled.
+
+// ConcurrencyPolicy describes how the job will be handled.
 // Only one of the following concurrent policies may be specified.
 // If none of the following policies is specified, the default one
 // is AllowConcurrent.
@@ -33,7 +36,7 @@ const (
 	// ForbidConcurrent forbids concurrent runs
 	ForbidConcurrent ConcurrencyPolicy = "Forbid"
 
-	// ReplaceConcurrent replaces the current run 
+	// ReplaceConcurrent replaces the current run
 	ReplaceConcurrent ConcurrencyPolicy = "Replace"
 )
 
@@ -85,6 +88,7 @@ type CronJobSpec struct {
 	// +optional
 	FailedJobsHistoryLimit *int32 `json:"failedJobsHistoryLimit,omitempty"`
 }
+
 // CronJobStatus defines the observed state of CronJob
 type CronJobStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster

@@ -96,7 +96,7 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 		return false, ""
 	}
-	
+
 	getScheduledTimeForJob := func(job *kbatch.Job) (*time.Time, error) {
 		timeRaw := job.Annotations[scheduledTimeAnnotation]
 		if len(timeRaw) == 0 {
@@ -109,12 +109,12 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 		return &timeParsed, nil
 	}
-	
+
 	for i, job := range childJobs.Items {
 		_, finishedType := isJobFinished(&job)
 		switch finishedType {
 		case "": //Ongoing
-			activeJobs = append(activeJobs, &childJobs.Items[i]
+			activeJobs = append(activeJobs, &childJobs.Items[i])
 		case kbatch.JobFailed:
 			failedJobs = append(failedJobs, &childJobs.Items[i])
 		case kbatch.JobComplete:
@@ -132,7 +132,7 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				mostRecentTime = scheduledTimeForJob
 			}
 		}
-		
+	}
 	return ctrl.Result{}, nil
 }
 

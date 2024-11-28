@@ -211,9 +211,45 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		starts := 0
 		for t := sched.Next(earliestTime); !t.After(now); t = sched.Next(t) {
-
+			lastMissed = t
+			starts++
+			if starts > 100 {
+				// we cant get the most recent times so just return an empty slice
+				return time.Time{}, time.Time{}, fmt.Errorf("Too many missed start times (> 100). Set or decrease .spec.startingDeadlineSeconds or check clock skew.")
+			}
 		}
+		return lastMissed, sched.Next(now), nil
 	}
+
+	missedRun, nextRun, err := getNextSchedule(&cronJob, r.Now())
+	if err != nil {
+		log.Error(err, "Unable to figure out cronjob schedule")
+		return ctrl.Result{}, nil
+	}
+	scheduledResult := ctrl.Result{RequeueAfter: nextRun.Sub(r.Now())}
+	log = log.WithValues("now", r.Now(), "next run", nextRun)
+
+	if missedRun.IsZero() {
+		log.V(1).Info("No upcoming scheduled times, sleeping until next")
+		return scheduledResult, nil
+	}
+
+	// make sure we're not too late to start the run
+	log = log.WithValues("current run", missedRun)
+	tooLate := false
+	if cronJob.Spec.StartingDeadlineSeconds != nil {
+		tooLate = missedRun.Add(time.Duration(*cronJob.Spec.StartingDeadlineSeconds) * time.Second).Before(r.Now())
+	}
+	if tooLate {
+		log.V(1).Info("missed the starting deadline for last run, sleeping until next")
+		return scheduledResult, nil
+	}
+
+	if cronJob.Spec.ConcurrencyPolicy == batchv1.ForbidConcurrent && len(activeJobs) > 0 {
+		log.V(1).Info("concurrency policy blocks concurrent runs, skipping", "num active", len(activeJobs))
+		return scheduledResult, nil
+	}
+
 	return ctrl.Result{}, nil
 }
 

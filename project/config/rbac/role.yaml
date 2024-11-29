@@ -8,6 +8,7 @@ rules:
   - batch.tutorial.kubebuilder.io
   resources:
   - cronjobs
+  - jobs
   verbs:
   - create
   - delete
@@ -30,3 +31,9 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - batch.tutorial.kubebuilder.io
+  resources:
+  - jobs/status
+  verbs:
+  - get

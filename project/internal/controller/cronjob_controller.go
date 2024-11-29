@@ -206,7 +206,7 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			}
 		}
 		if earliestTime.After(now) {
-			return time.Time{}, sched.Next(now)
+			return time.Time{}, sched.Next(now), nil
 		}
 
 		starts := 0
@@ -248,6 +248,15 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if cronJob.Spec.ConcurrencyPolicy == batchv1.ForbidConcurrent && len(activeJobs) > 0 {
 		log.V(1).Info("concurrency policy blocks concurrent runs, skipping", "num active", len(activeJobs))
 		return scheduledResult, nil
+	}
+
+	if cronJob.Spec.ConcurrencyPolicy == batchv1.ReplaceConcurrent {
+		for _, activeJob := range activeJobs {
+			if err := r.Delete(ctx, activeJob, client.PropagationPolicy(metav1.DeletePropagationBackground)); client.IgnoreNotFound(err) != nil {
+				log.Error(err, "unable to delete active job", "job", activeJob)
+				return ctrl.Result{}, err
+			}
+		}
 	}
 
 	return ctrl.Result{}, nil

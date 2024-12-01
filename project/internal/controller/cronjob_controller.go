@@ -284,7 +284,21 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 		return job, nil
 	}
-	return ctrl.Result{}, nil
+
+	job, err := constructJobForCronJob(&cronJob, missedRun)
+	if err != nil {
+		log.Error(err, "unable to construct job from template")
+		// Dont bother requeueing until we change the spec
+		return scheduledResult, nil
+	}
+	if err := r.Create(ctx, job); err != nil {
+		log.Error(err, "unable to create job for cronjob", "job", job)
+		return ctrl.Result{}, nil
+	}
+
+	log.V(1).Info("created job for cronjob run", "job", job)
+
+	return scheduledResult, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

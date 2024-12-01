@@ -28,7 +28,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ref "k8s.io/client-go/tools/reference"
-	"k8s.io/kubernetes/pkg/controller/cronjob"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -259,30 +258,30 @@ func (r *CronJobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			}
 		}
 	}
-	
+
 	constructJobForCronJob := func(cronJob *batchv1.CronJob, scheduledTime time.Time) (*kbatch.Job, error) {
-		name : fmt.Sprintf("%s-%d", cronJob.Name, scheduledTime.Unix())
+		name := fmt.Sprintf("%s-%d", cronJob.Name, scheduledTime.Unix())
 
 		job := &kbatch.Job{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: make(map[string]string),
+				Labels:      make(map[string]string),
 				Annotations: make(map[string]string),
-				name: name,
-				Namespace: cronJob.Namespace,
+				Name:        name,
+				Namespace:   cronJob.Namespace,
 			},
-			Spec: *cronJob.Spec.JobTemplate.Spec.DeepCopy()
+			Spec: *cronJob.Spec.JobTemplate.Spec.DeepCopy(),
 		}
-		for k, v := cronJob.Spec.JobTemplate.Annotations {
+		for k, v := range cronJob.Spec.JobTemplate.Annotations {
 			job.Annotations[k] = v
 		}
 		job.Annotations[scheduledTimeAnnotation] = scheduledTime.Format(time.RFC3339)
 		for k, v := range cronJob.Spec.JobTemplate.Labels {
 			job.Labels[k] = v
 		}
-		if err := ctrl.SetControllerReference(cronjob, job, r.Scheme); err != nil {
+		if err := ctrl.SetControllerReference(cronJob, job, r.Scheme); err != nil {
 			return nil, err
 		}
-		
+
 		return job, nil
 	}
 	return ctrl.Result{}, nil

@@ -17,6 +17,9 @@ limitations under the License.
 package v1
 
 import (
+	"context"
+	"fmt"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -45,13 +48,44 @@ func (r *CronJob) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 // +kubebuilder:webhook:path=/mutate-batch-tutorial-kubebuilder-io-v1-cronjob,mutating=true,failurePolicy=fail,sideEffects=None,groups=batch.tutorial.kubebuilder.io,resources=cronjobs,verbs=create;update,versions=v1,name=mcronjob.kb.io,admissionReviewVersions=v1
 
-var _ webhook.Defaulter = &CronJob{}
+type CronJobCustomDefaulter struct {
+	DefaultConcurrencyPolicy         batchv1.ConcurrencyPolicy
+	DefaultSuspend                   bool
+	DefaultSuccessfulJobHistoryLimit int32
+	DefaultFailedJobsHistoryLimit    int32
+}
+
+var _ webhook.CustomDefaulter = &CronJobCustomDefaulter{}
 
 // Default implements webhook.Defaulter so a webhook will be registered for the type
-func (r *CronJob) Default() {
-	cronjoblog.Info("default", "name", r.Name)
+func (d *CronJobCustomDefaulter) Default(ctx context.Context, obj runtime.Object) error {
+	cronjob, ok := obj.(*batchv1.CronJob)
 
-	// TODO(user): fill in your defaulting logic.
+	if !ok {
+		return fmt.Errorf("Expected a cronjob object but got a %T", obj)
+	}
+	cronjoblog.Info("Defaulting for CronJob", "name", cronjob.GetName())
+
+	d.applyDefaults(cronjob)
+	return nil
+}
+
+func (d *CronJobCustomDefaulter) applyDefaults(cronJob *batchv1.CronJob) {
+	if cronJob.Spec.ConcurrencyPolicy == "" {
+		cronJob.Spec.ConcurrencyPolicy = d.DefaultConcurrencyPolicy
+	}
+	if cronJob.Spec.Suspend == nil {
+		cronJob.Spec.Suspend = new(bool)
+		*&cronJob.Spec.Suspend = d.DefaultSuspend
+	}
+	if cronJob.Spec.SuccessfulJobsHistoryLimit == nil {
+		cronJob.Spec.SuccessfulJobsHistoryLimit = new(int32)
+		*cronJob.Spec.SuccessfulJobsHistoryLimit = d.DefaultSuccessfulJobHistoryLimit
+	}
+	if cronJob.Spec.FailedJobsHistoryLimit == nil {
+		cronJob.Spec.FailedJobsHistoryLimit = new(int32)
+		*cronJob.Spec.FailedJobsHistoryLimit = d.DefaultFailedJobsHistoryLimit
+	}
 }
 
 // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.

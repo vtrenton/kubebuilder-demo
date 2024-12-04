@@ -20,8 +20,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/robfig/cron"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	validationutils "k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -99,10 +102,10 @@ type CronJobCustomValidator struct {
 	// TODO
 }
 
-var _ webhook.CronJobCustomValidator = &CronJobCustomValidator{}
+var _ webhook.CustomValidator = &CronJobCustomValidator{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *CronJob) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *CronJobCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	cronjob, ok := obj.(*batchv1.CronJob)
 	if !ok {
 		return nil, fmt.Errorf("expected a CronJob object but got %T", obj)
@@ -113,26 +116,24 @@ func (r *CronJob) ValidateCreate(ctx context.Context, obj runtime.Object) (admis
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *CronJob) ValidateUpdate(ctx context.Context, newObj runtime.Object) (admission.Warnings, error) {
+func (v *CronJobCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
 	cronjob, ok := newObj.(*batchv1.CronJob)
 	if !ok {
 		return nil, fmt.Errorf("expected a CronJob for the newObj but got %T", newObj)
 	}
 	cronjoblog.Info("Validation for cronjob upon update", "name", cronjob.GetName())
 
-	// TODO(user): fill in your validation logic upon object update.
 	return nil, validateCronJob(cronjob)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *CronJob) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *CronJobCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	cronjob, ok := obj.(*batchv1.CronJob)
 	if !ok {
 		return nil, fmt.Errorf("expected CronJob object but got %T", obj)
 	}
 	cronjoblog.Info("Validation for cronjob upon update", "name", cronjob.GetName())
 
-	// TODO(user): fill in your validation logic upon object update.
 	return nil, nil
 }
 
@@ -151,4 +152,24 @@ func validateCronJob(cronjob *batchv1.CronJob) error {
 	return apierrors.NewInvalid(schema.GroupKind{
 		Group: "batch.tutorial.kubebuilder.io", Kind: "CronJob"},
 		cronjob.Name, allErrs)
+}
+
+func validateCronJobSpec(cronjob *batchv1.CronJob) *field.Error {
+	return validateScheduleFormat(
+		cronjob.Spec.Schedule,
+		field.NewPath("spec").Child("Schedule"))
+}
+
+func validateScheduleFormat(schedule string, fldPath *field.Path) *field.Error {
+	if _, err := cron.ParseStandard(schedule); err != nil {
+		return field.Invalid(fldPath, schedule, err.Error())
+	}
+	return nil
+}
+
+func validateCronJobName(cronjob *batchv1.CronJob) *field.Error {
+	if len(cronjob.ObjectMeta.Name) > validationutils.DNS1035LabelMaxLength-11 {
+		return field.Invalid(field.NewPath("metadata").Child("name"), cronjob.ObjectMeta.Name, "must be no more than 52 characters")
+	}
+	return nil
 }

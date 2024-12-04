@@ -21,6 +21,8 @@ import (
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -93,28 +95,60 @@ func (d *CronJobCustomDefaulter) applyDefaults(cronJob *batchv1.CronJob) {
 // Modifying the path for an invalid path can cause API server errors; failing to locate the webhook.
 // +kubebuilder:webhook:path=/validate-batch-tutorial-kubebuilder-io-v1-cronjob,mutating=false,failurePolicy=fail,sideEffects=None,groups=batch.tutorial.kubebuilder.io,resources=cronjobs,verbs=create;update,versions=v1,name=vcronjob.kb.io,admissionReviewVersions=v1
 
-var _ webhook.Validator = &CronJob{}
+type CronJobCustomValidator struct {
+	// TODO
+}
+
+var _ webhook.CronJobCustomValidator = &CronJobCustomValidator{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
-func (r *CronJob) ValidateCreate() (admission.Warnings, error) {
-	cronjoblog.Info("validate create", "name", r.Name)
+func (r *CronJob) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	cronjob, ok := obj.(*batchv1.CronJob)
+	if !ok {
+		return nil, fmt.Errorf("expected a CronJob object but got %T", obj)
+	}
+	cronjoblog.Info("Validation for CronJob Creation", "name", cronjob.GetName())
 
-	// TODO(user): fill in your validation logic upon object creation.
-	return nil, nil
+	return nil, validateCronJob(cronjob)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *CronJob) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
-	cronjoblog.Info("validate update", "name", r.Name)
+func (r *CronJob) ValidateUpdate(ctx context.Context, newObj runtime.Object) (admission.Warnings, error) {
+	cronjob, ok := newObj.(*batchv1.CronJob)
+	if !ok {
+		return nil, fmt.Errorf("expected a CronJob for the newObj but got %T", newObj)
+	}
+	cronjoblog.Info("Validation for cronjob upon update", "name", cronjob.GetName())
+
+	// TODO(user): fill in your validation logic upon object update.
+	return nil, validateCronJob(cronjob)
+}
+
+// ValidateDelete implements webhook.Validator so a webhook will be registered for the type
+func (r *CronJob) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	cronjob, ok := obj.(*batchv1.CronJob)
+	if !ok {
+		return nil, fmt.Errorf("expected CronJob object but got %T", obj)
+	}
+	cronjoblog.Info("Validation for cronjob upon update", "name", cronjob.GetName())
 
 	// TODO(user): fill in your validation logic upon object update.
 	return nil, nil
 }
 
-// ValidateDelete implements webhook.Validator so a webhook will be registered for the type
-func (r *CronJob) ValidateDelete() (admission.Warnings, error) {
-	cronjoblog.Info("validate delete", "name", r.Name)
+func validateCronJob(cronjob *batchv1.CronJob) error {
+	var allErrs field.ErrorList
+	if err := validateCronJobName(cronjob); err != nil {
+		allErrs = append(allErrs, err)
+	}
+	if err := validateCronJobSpec(cronjob); err != nil {
+		allErrs = append(allErrs, err)
+	}
+	if len(allErrs) == 0 {
+		return nil
+	}
 
-	// TODO(user): fill in your validation logic upon object deletion.
-	return nil, nil
+	return apierrors.NewInvalid(schema.GroupKind{
+		Group: "batch.tutorial.kubebuilder.io", Kind: "CronJob"},
+		cronjob.Name, allErrs)
 }

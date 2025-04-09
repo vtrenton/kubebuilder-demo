@@ -30,6 +30,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
 	batchv1 "tutorial.kubebuilder.io/project/api/v1"
 )
 
@@ -37,11 +38,11 @@ import (
 var cronjoblog = logf.Log.WithName("cronjob-resource")
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
-func (r *CronJob) SetupWebhookWithManager(mgr ctrl.Manager) error {
+func SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).For(&batchv1.CronJob{}).
 		WithValidator(&CronJobCustomValidator{}).
 		WithDefaulter(&CronJobCustomDefaulter{
-			DefaultConcurrencyPolicy:         batchv1.AllowCurrent,
+			DefaultConcurrencyPolicy:         batchv1.AllowConcurrent,
 			DefaultSuspend:                   false,
 			DefaultSuccessfulJobHistoryLimit: 3,
 			DefaultFailedJobsHistoryLimit:    1,
@@ -81,11 +82,11 @@ func (d *CronJobCustomDefaulter) applyDefaults(cronJob *batchv1.CronJob) {
 	}
 	if cronJob.Spec.Suspend == nil {
 		cronJob.Spec.Suspend = new(bool)
-		*&cronJob.Spec.Suspend = d.DefaultSuspend
+		*cronJob.Spec.Suspend = d.DefaultSuspend
 	}
-	if cronJob.Spec.SuccessfulJobsHistoryLimit == nil {
-		cronJob.Spec.SuccessfulJobsHistoryLimit = new(int32)
-		*cronJob.Spec.SuccessfulJobsHistoryLimit = d.DefaultSuccessfulJobHistoryLimit
+	if cronJob.Spec.SucessfulJobsHistoryLimit == nil {
+		cronJob.Spec.SucessfulJobsHistoryLimit = new(int32)
+		*cronJob.Spec.SucessfulJobsHistoryLimit = d.DefaultSuccessfulJobHistoryLimit
 	}
 	if cronJob.Spec.FailedJobsHistoryLimit == nil {
 		cronJob.Spec.FailedJobsHistoryLimit = new(int32)

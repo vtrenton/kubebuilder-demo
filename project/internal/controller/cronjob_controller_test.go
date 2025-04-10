@@ -18,11 +18,14 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	v1 "k8s.io/client-go/applyconfigurations/core/v1"
+	"k8s.io/kubernetes/pkg/controller/cronjob"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +34,52 @@ import (
 )
 
 var _ = Describe("CronJob Controller", func() {
+	const (
+		CronJobName = "test-cronjob"
+		CronJobNamespace = "default"
+		JobName = "test-job"
+
+		time = time.Second * 10
+		duration = time.Second * 10
+		interval = time.Millisecond * 250
+	)
+
+	Context("When updating CronJob status", func() {
+		It("Should increase CronJob status.Active count when new Jobs are created", func() {
+			By("Creating a new CronJob")
+			ctx := context.Background()
+			cronJob := &cronjobv1.CronJob{
+				TypeMeta: metav1.TypeMeta {
+					APIVersion: "batch.tutorial.kubebuilder.io/v1",
+					Kind: "CronJob",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: CronJobName,
+					Namespace: CronJobNamespace,
+				},
+				Spec: cronjobv1.CronJobSpec {
+					Schedule: "1 * * * *",
+					JobTemplate: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: v1.PodTemplateSpec{
+								Spec: v1.PodSpec{
+									Containers: []v1.Container{
+										{
+											Name: "test-container",
+											Image: "test-image",
+										},
+									},
+									RestartPolicy: v1.RestartPolicyOnFailure,
+								},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, CronJob)).To(Succeed())
+		},
+	})
+
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
